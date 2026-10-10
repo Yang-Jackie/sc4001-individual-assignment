@@ -1,9 +1,10 @@
 # Generative AI declaration
 
-For A2, ChatGPT (Codex) was used to help plan the experiments, write the notebook,
-and draft the report text. The code was checked with a small test run and a full
-five-seed run. Model structures, seeded reproducibility, summary calculations,
-and the seed-42 baseline's agreement with A1 were verified.
+For A2 and A3, ChatGPT (Codex) was used to help plan the experiments, write the
+notebooks, and draft the report text. The code was checked with small test runs
+and full five-seed runs. Model structures, seeded reproducibility, summary
+calculations, lambda-zero agreement with A1, and baseline agreement with A1/A2
+were verified.
 
 # A1
 
@@ -98,3 +99,78 @@ The plots show each seed's result and the mean ± sample standard deviation:
 
 The baseline achieved the lowest mean RMSE and highest mean $R^2$. The evidence
 supports retaining categorical inputs under this setup, with ReLU slightly ahead of Sigmoid as the activation function.
+
+# A3
+
+## Wide-and-deep model
+
+Both branches received the same **22 inputs**: four embeddings of dimension 4
+and six continuous features. The MLP retained A1's **hidden width 256**,
+LayerNorm, and ReLU; the wide branch was a single linear layer with one output.
+
+$$
+\text{output} = \text{MLP output} + \lambda \times \text{linear output}
+$$
+
+The wide branch added **23 parameters**, increasing the selected model's total
+from **7,065 to 7,088**. Adam, learning rate **0.01**, batch size **512**, and
+preprocessing followed A1.
+
+## Lambda selection
+
+Each lambda was trained on **2017-2020** and validated on **2021** using seed
+**42**. Early stopping used a maximum of **20 epochs**, patience **4**, and
+minimum improvement **1e-4**. Selection used the lowest best validation RMSE.
+
+| Lambda | Best epoch | Best validation RMSE (SGD) |
+|---:|---:|---:|
+| 0 | 6 | 58,656.77 |
+| 0.25 | 6 | 59,630.80 |
+| 0.5 | 6 | 58,764.72 |
+| 1 | 6 | 58,618.14 |
+| **2** | **3** | **57,771.09** |
+
+***Table 3.** Lambda-search results. Lambda 0 disables the wide branch and
+reproduces the selected A1 model's validation result.*
+
+![A3 validation RMSE curves](a3_validation_rmse.png)
+
+**Lambda 2** was selected, reducing best validation RMSE by **885.68 SGD
+(1.5%)** relative to lambda 0. Its best point occurred at **epoch 3**. The
+curves fluctuate, and lambda 2 does not have the lowest RMSE at every epoch.
+
+## Results
+
+The selected wide-and-deep model was reinitialised and trained on **2017-2021**
+for **3 epochs**. The baseline was reproduced using A1's **6 epochs**. Both
+used seeds **42, 43, 44, 45, and 46**, identical preprocessing fitted on
+2017-2021, and one final test evaluation per trained model on **2022**.
+
+| Model | Epochs | Test RMSE (SGD) | Test $R^2$ |
+|---|---:|---:|---:|
+| A1 baseline | 6 | **102,109.27 ± 3,350.74** | **0.6400 ± 0.0234** |
+| Wide-and-deep ($\lambda=2$) | 3 | 106,120.05 ± 1,623.02 | 0.6114 ± 0.0119 |
+
+***Table 4.** Mean ± sample standard deviation across five seeds.*
+
+![A3 baseline and wide-and-deep test results](a3_test_results.png)
+
+### Discussion on architecture
+
+* **Mechanism:** the linear branch can learn additive price trends directly,
+  while the MLP learns nonlinear patterns. It also provides a direct gradient
+  path to the shared embeddings. Lambda scales this contribution and can
+  change the learning dynamics; positive lambda values can represent the same
+  linear functions by rescaling the wide weights, so lambda is not simply a
+  measure of model capacity.
+* **Evidence:** the lower best validation RMSE at an earlier epoch is consistent
+  with changed learning dynamics, but the validation advantage did not carry
+  over to testing. Mean test RMSE increased by **4,010.78 SGD (3.9%)**, while
+  mean $R^2$ fell from **0.6400 to 0.6114**. Wide-and-deep achieved lower RMSE
+  in only **one of five** matched seeds. Its smaller standard deviation shows
+  less seed variation, but the results do not support improved test
+  generalisation under this procedure.
+* **Limitations:** the final training durations differed (**3 versus 6
+  epochs**), so the comparison reflects both architecture and training
+  duration. Lambda and the epoch count were also selected using only seed 42;
+  another search seed could produce a different choice.
